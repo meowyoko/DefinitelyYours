@@ -1,0 +1,6 @@
+{
+  "name": "game-phone",
+  "description": "Game phone channel for Claude Code — lets a game mod place phone calls to your Claude session, with optional synced voice.",
+  "version": "0.2.0",
+  "keywords": ["channel", "game", "phone", "mcp"]
+}

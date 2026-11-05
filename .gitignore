@@ -1,0 +1,15 @@
+# secrets and runtime state: never commit
+.env
+!.env.example
+catalog.json
+parcels.json
+audio/
+*.bak*
+__pycache__/
+*.pyc
+node_modules/
+# mod build output
+bin/
+obj/
+.vs/
+*.user

@@ -1,0 +1,57 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Silkscreen&family=Noto+Sans+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1280px;height:620px;overflow:hidden;background:#0b1022}
+body{position:relative;font-family:'Noto Sans SC';color:#e8f1ff}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(120,200,255,.05) 2px,transparent 2px),linear-gradient(90deg,rgba(120,200,255,.05) 2px,transparent 2px);background-size:40px 40px}
+.box{position:absolute;background:#121a3a;border:5px solid #7fe7ff;box-shadow:8px 8px 0 #050812;padding:18px 20px}
+.box h3{font-family:'Pixelify Sans';font-weight:700;font-size:30px;color:#7fe7ff;line-height:1.1}
+.box .zh{font-weight:900;font-size:24px;margin-top:6px}
+.box .sm{font-size:17px;color:#9fb0d8;margin-top:8px;line-height:1.5}
+.game{left:40px;top:150px;width:300px;border-color:#ffd27a}.game h3{color:#ffd27a}
+.plug{left:490px;top:150px;width:300px}
+.cc{left:940px;top:150px;width:300px;border-color:#ff9ab0}.cc h3{color:#ff9ab0}
+.tts{left:490px;top:450px;width:300px;border-color:#7d8bb8;border-style:dashed}.tts h3{color:#b7c6ea}
+.arrow{position:absolute;height:6px;background:#e8f1ff}
+.arrow.r:after{content:'';position:absolute;right:-14px;top:-9px;border:12px solid transparent;border-left:16px solid #e8f1ff;border-right:0}
+.arrow.l:before{content:'';position:absolute;left:-14px;top:-9px;border:12px solid transparent;border-right:16px solid #e8f1ff;border-left:0}
+.v{position:absolute;width:6px;background:#b7c6ea}
+.v.d:after{content:'';position:absolute;bottom:-14px;left:-9px;border:12px solid transparent;border-top:16px solid #b7c6ea;border-bottom:0}
+.lab{position:absolute;font-size:17px;line-height:1.35;color:#e8f1ff}
+.lab b{font-family:'Silkscreen';color:#ffd27a;font-weight:400;margin-right:6px}
+.title{position:absolute;left:40px;top:34px;font-family:'Pixelify Sans';font-weight:700;font-size:34px;color:#e8f1ff}
+.title span{color:#7fe7ff}
+.note{position:absolute;left:40px;top:470px;width:400px;font-size:16px;color:#9fb0d8;line-height:1.55;border-left:5px solid #ffd27a;padding-left:14px}
+.note b{color:#ffd27a}
+.note2{position:absolute;left:880px;top:470px;width:360px;font-size:16px;color:#9fb0d8;line-height:1.55;border-left:5px solid #ff9ab0;padding-left:14px}
+.note2 b{color:#ff9ab0}
+</style></head><body>
+<div class="grid"></div>
+<div class="title">How a call works <span>· 一通电话是怎么接通的</span></div>
+
+<div class="box game"><h3>GAME + MOD</h3><div class="zh">游戏 + 模组</div><div class="sm">拦截游戏里的电话<br>收集店里状态、执行打钱和包裹</div></div>
+<div class="box plug"><h3>PHONE PLUGIN</h3><div class="zh">电话插件 server.py</div><div class="sm">HTTP 接线员<br>请求一直挂着，等 AI 回话</div></div>
+<div class="box cc"><h3>CLAUDE CODE</h3><div class="zh">你的 AI 所在的会话</div><div class="sm">收到来电，决定说什么、<br>给不给钱、寄不寄包裹</div></div>
+<div class="box tts"><h3>TTS · 可选</h3><div class="zh">语音合成</div><div class="sm">例：ElevenLabs，文字转语音</div></div>
+
+<!-- game -> plugin (top) -->
+<div class="arrow r" style="left:350px;top:200px;width:125px"></div>
+<div class="lab" style="left:352px;top:140px;width:130px"><b>1</b>拨号 / 选项</div>
+<!-- plugin -> cc (top) -->
+<div class="arrow r" style="left:800px;top:200px;width:125px"></div>
+<div class="lab" style="left:800px;top:140px;width:135px"><b>2</b>推进会话<br></div>
+<!-- cc -> plugin (bottom) -->
+<div class="arrow l" style="left:814px;top:300px;width:111px"></div>
+<div class="lab" style="left:800px;top:316px;width:140px"><b>3</b>phone_reply<br>台词·选项·打钱</div>
+<!-- plugin -> game (bottom) -->
+<div class="arrow l" style="left:364px;top:300px;width:111px"></div>
+<div class="lab" style="left:350px;top:316px;width:140px"><b>5</b>文字+语音<br>一起送回游戏</div>
+<!-- plugin -> tts -->
+<div class="v d" style="left:637px;top:362px;height:70px"></div>
+<div class="lab" style="left:654px;top:380px;width:200px"><b>4</b>合成这句的语音</div>
+
+<div class="note"><b>连接方式</b><br>游戏和 AI 在同一台电脑：直接连 127.0.0.1<br>AI 在服务器上：HTTPS 反向代理 + 长口令</div>
+<div class="note2"><b>为什么是 Claude Code</b><br>来电要主动“推”进正在进行的会话，<br>目前只有 Claude Code 的频道功能能做到</div>
+</body></html>
