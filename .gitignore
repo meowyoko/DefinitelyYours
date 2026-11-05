@@ -13,3 +13,22 @@ bin/
 obj/
 .vs/
 *.user
+*.dll
+*.pdb
+*.deps.json
+
+# local mod configuration and test data
+mod/config.json
+*.log
+GameLog_*.txt
+Player.log
+*.sav
+*.save
+ModData/
+
+# local development files
+/.dotnet/
+/.appdata/
+/AGENTS.md
+/mod/AGENTS.md
+/mod/HANDOFF.md

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Manifest>
+  <ID>ai_phone</ID>
+  <Name>Definitely Yours</Name>
+  <Author>Gio &amp; 凛 &amp; Ciel</Author>
+  <ModVersion>1.7.1</ModVersion>
+  <Description>AI 电话协议 v1：语音通话、状态同步、晨间包裹与实体来信册。</Description>
+  <GameVersions>
+    <Version>0.46D</Version>
+  </GameVersions>
+  <Prerequisites />
+  <Assemblies>
+    <Assembly>AiPhone.dll</Assembly>
+  </Assemblies>
+  <Capabilities>
+    <Capability>network</Capability>
+  </Capabilities>
+</Manifest>

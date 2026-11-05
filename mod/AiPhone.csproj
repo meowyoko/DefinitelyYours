@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>AiPhone</AssemblyName>
+    <RootNamespace>AiPhone</RootNamespace>
+    <ProbablyStolenDir Condition="'$(ProbablyStolenDir)' == ''">..\..\..</ProbablyStolenDir>
+    <ManagedDir>$(ProbablyStolenDir)\Probably Stolen_Data\Managed</ManagedDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(ManagedDir)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(ManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(ManagedDir)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(ManagedDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(ManagedDir)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Net.Http">
+      <HintPath>$(ManagedDir)\System.Net.Http.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ParcelTextures Include="Textures\Items\*.png" />
+  </ItemGroup>
+
+  <Target Name="InstallMod" AfterTargets="Build">
+    <PropertyGroup>
+      <ModInstallDir>$(ProbablyStolenDir)\Mods\AiPhone</ModInstallDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(ModInstallDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModInstallDir)" />
+    <Copy SourceFiles="manifest.xml" DestinationFolder="$(ModInstallDir)" />
+    <Copy SourceFiles="config.example.json"
+          DestinationFiles="$(ModInstallDir)\config.json"
+          Condition="!Exists('$(ModInstallDir)\config.json')" />
+    <MakeDir Directories="$(ModInstallDir)\Textures\Items"
+             Condition="'@(ParcelTextures)' != ''" />
+    <Copy SourceFiles="@(ParcelTextures)"
+          DestinationFolder="$(ModInstallDir)\Textures\Items"
+          SkipUnchangedFiles="true"
+          Condition="'@(ParcelTextures)' != ''" />
+  </Target>
+</Project>
