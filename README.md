@@ -1,6 +1,6 @@
 ![](docs/title.gif)
 
-在《Probably Stolen》中通过电话连接你自己的 AI，让它参与店铺经营与日常事件。
+在《深空当铺：可能是偷的》（Probably Stolen）中通过电话连接你自己的 AI，让它参与店铺经营与日常事件。
 
 演示视频：https://xhslink.cn/o/1RlbpnP6qlp
 
@@ -27,14 +27,14 @@ MOD 把游戏状态和玩家选择发送给电话插件，插件再把 AI 的回
 ## 需要准备
 
 - 游戏版本：`0.46D`
-- Claude Code：频道是实验功能，启动时需要加入 `--dangerously-load-development-channels server:game-phone`
+- Claude Code：频道是实验功能，启动时需要加入 `--dangerously-load-development-channels server:game-phone`（登记方式见安装）
 - ElevenLabs API Key：可选，仅在需要生成通话语音时使用
 
 ## 安装
 
 ### MOD
 
-1. 从 Release 下载 MOD 包，或自行构建 `mod/AiPhone.csproj`。
+1. 自行构建 `mod/AiPhone.csproj`（Release 发布后也可直接下载）。
 2. 将 MOD 文件放入游戏的 `Mods/AiPhone` 目录，保留 `Textures/Items` 目录结构。
 3. 将 `config.example.json` 复制为 `config.json`，填写电话插件地址与双方一致的共享口令。
 4. 启动游戏并在 MOD 列表中启用 Definitely Yours。
@@ -42,9 +42,15 @@ MOD 把游戏状态和玩家选择发送给电话插件，插件再把 AI 的回
 ### 电话插件
 
 1. 准备 Python 3；如需输出 WAV 或 OGG 语音，另行安装 ffmpeg。
-2. 将 [phone-plugin/.env.example](phone-plugin/.env.example) 复制到 `~/.claude/channels/game-phone/.env`，至少设置共享口令。
-3. 在仓库根目录运行 `claude --plugin-dir ./phone-plugin --dangerously-load-development-channels server:game-phone`。
-4. 进入会话后调用 `phone_open` 开线；也可以通过插件设置让电话线随会话自动开启。
+2. 将 [phone-plugin/.env.example](phone-plugin/.env.example) 复制到 `~/.claude/channels/game-phone/.env`，至少设置 `PHONE_TOKEN`。
+3. 在平时启动 Claude Code 的目录中新建或编辑 `.mcp.json`，登记电话插件（路径换成实际路径）：
+
+```json
+{ "mcpServers": { "game-phone": { "command": "python3", "args": ["-u", "/你的路径/phone-plugin/server.py"] } } }
+```
+
+4. 在该目录启动：`claude --dangerously-load-development-channels server:game-phone`
+5. 进入会话后让 AI 调用 `phone_open` 开线；也可以在 `.env` 中设置 `PHONE_AUTO_OPEN=1` 自动开线。
 
 ## 设置项
 
