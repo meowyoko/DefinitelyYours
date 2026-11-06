@@ -256,7 +256,10 @@ namespace AiPhone
                             Types = item.GetGameItemType()?.ToArray() ?? Array.Empty<string>(),
                             BaseValue = (int)Math.Min(int.MaxValue, value),
                             Contraband = ContrabandHelper.IsContraband(item),
-                            Stolen = StolenHelper.IsStolenItem(item)
+                            Stolen = StolenHelper.IsStolenItem(item),
+                            GridWidth = Math.Max(1, (item.modifiedShape ?? item.shape)?.width ?? 1),
+                            GridHeight = Math.Max(1, (item.modifiedShape ?? item.shape)?.height ?? 1),
+                            GridCells = Math.Max(1, item.GetModifiedItemSize())
                         };
                     }
                     catch
@@ -402,23 +405,21 @@ namespace AiPhone
 
         private static void HandleParcel(int day, PhoneConfig config, ParcelOrder order)
         {
-            var rejected = new List<string>();
+            Dictionary<string, int> requested = CountRequested(order.Items);
+            var packed = new Dictionary<string, int>(StringComparer.Ordinal);
             int maxPerWeek = Prototype.GetParcelMaxPerWeek();
             if (!ParcelStateCache.CanDeliverThisWeek(day, maxPerWeek))
             {
-                rejected.AddRange((order.Items ?? new List<ParcelOrderItem>())
-                    .Where(line => line != null && !string.IsNullOrWhiteSpace(line.Id))
-                    .Select(line => line.Id));
-                SendResult(config, order.Id, "failed", rejected);
+                SendResult(config, order.Id, "failed", requested, packed);
                 Prototype.Log?.Log($"包裹 {order.Id} 被频率上限拒收：本周上限 {maxPerWeek}。" );
                 return;
             }
 
-            List<ParcelOrderItem> accepted = ValidateAndTrim(order.Items, rejected);
-            GameItem parcel = ParcelItemFactory.CreateParcel(order.Style, accepted, order.Note, rejected);
+            List<ParcelOrderItem> accepted = ValidateAndTrim(order.Items);
+            GameItem parcel = ParcelItemFactory.CreateParcel(order.Style, accepted, order.Note, packed);
             if (parcel == null)
             {
-                SendResult(config, order.Id, "failed", rejected);
+                SendResult(config, order.Id, "failed", requested, new Dictionary<string, int>());
                 Prototype.Log?.Error($"包裹 {order.Id} 创建失败。" );
                 return;
             }
@@ -427,19 +428,20 @@ namespace AiPhone
             if (placed == "failed")
             {
                 ParcelItemFactory.DestroyTree(parcel);
+                packed.Clear();
             }
             else
             {
                 ParcelStateCache.RecordDelivery(day, order.Id);
             }
 
-            SendResult(config, order.Id, placed, rejected);
-            Prototype.Log?.Log($"包裹 {order.Id} 处理完成：placed={placed}；rejected={rejected.Count}。" );
+            SendResult(config, order.Id, placed, requested, packed);
+            int rejectedCount = requested.Count(pair => !packed.TryGetValue(pair.Key, out int delivered)
+                || delivered < pair.Value);
+            Prototype.Log?.Log($"包裹 {order.Id} 处理完成：placed={placed}；rejected={rejectedCount}。" );
         }
 
-        private static List<ParcelOrderItem> ValidateAndTrim(
-            IList<ParcelOrderItem> requested,
-            List<string> rejected)
+        private static List<ParcelOrderItem> ValidateAndTrim(IList<ParcelOrderItem> requested)
         {
             var accepted = new List<ParcelOrderItem>();
             var actualBaseValues = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -448,7 +450,6 @@ namespace AiPhone
                 if (line == null || line.Amount <= 0 || string.IsNullOrWhiteSpace(line.Id)
                     || !safeCatalog.TryGetValue(line.Id, out CatalogItem catalogItem))
                 {
-                    rejected.Add(line?.Id ?? string.Empty);
                     continue;
                 }
 
@@ -456,9 +457,9 @@ namespace AiPhone
                 try
                 {
                     probe = DirectoryMaster.Item(line.Id, true);
-                    if (!IsSafeParcelInstance(line.Id, probe, out _))
+                    if (!IsSafeParcelInstance(line.Id, probe, out string reason))
                     {
-                        rejected.Add(line.Id);
+                        Prototype.Log?.Log($"包裹物品 {line.Id} 被本地校验拒绝：{reason}。" );
                         continue;
                     }
 
@@ -468,7 +469,6 @@ namespace AiPhone
                 }
                 catch
                 {
-                    rejected.Add(line.Id);
                     continue;
                 }
                 finally
@@ -490,14 +490,40 @@ namespace AiPhone
             while (accepted.Count > 0 && total > maximum)
             {
                 int last = accepted.Count - 1;
-                ParcelOrderItem removed = accepted[last];
-                accepted.RemoveAt(last);
-                int baseValue = Math.Max(safeCatalog[removed.Id].BaseValue, actualBaseValues[removed.Id]);
-                total = Math.Max(0, total - (long)baseValue * removed.Amount);
-                rejected.Add(removed.Id);
+                ParcelOrderItem trimmed = accepted[last];
+                int baseValue = Math.Max(safeCatalog[trimmed.Id].BaseValue, actualBaseValues[trimmed.Id]);
+                long excess = total - maximum;
+                int removeAmount = (int)Math.Min(
+                    trimmed.Amount,
+                    Math.Max(1L, (excess + baseValue - 1L) / baseValue));
+                trimmed.Amount -= removeAmount;
+                total = Math.Max(0, total - (long)baseValue * removeAmount);
+                Prototype.Log?.Log($"包裹价值限制：{trimmed.Id} 减少 {removeAmount} 件。" );
+                if (trimmed.Amount <= 0)
+                {
+                    accepted.RemoveAt(last);
+                }
             }
 
             return accepted;
+        }
+
+        private static Dictionary<string, int> CountRequested(IList<ParcelOrderItem> lines)
+        {
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (ParcelOrderItem line in lines ?? Array.Empty<ParcelOrderItem>())
+            {
+                if (line == null || line.Amount <= 0 || string.IsNullOrWhiteSpace(line.Id))
+                {
+                    continue;
+                }
+
+                result.TryGetValue(line.Id, out int previous);
+                long total = (long)previous + line.Amount;
+                result[line.Id] = (int)Math.Min(int.MaxValue, total);
+            }
+
+            return result;
         }
 
         private static long SaturatingAdd(long current, long addition)
@@ -532,14 +558,33 @@ namespace AiPhone
             PhoneConfig config,
             string parcelId,
             string placed,
-            IEnumerable<string> rejected)
+            IReadOnlyDictionary<string, int> requested,
+            IReadOnlyDictionary<string, int> delivered)
         {
+            List<ParcelItemResult> items = requested
+                .Select(pair =>
+                {
+                    delivered.TryGetValue(pair.Key, out int deliveredAmount);
+                    deliveredAmount = Math.Max(0, Math.Min(pair.Value, deliveredAmount));
+                    return new ParcelItemResult
+                    {
+                        Id = pair.Key,
+                        Requested = pair.Value,
+                        Delivered = deliveredAmount,
+                        Rejected = pair.Value - deliveredAmount
+                    };
+                })
+                .ToList();
             var body = new ParcelResultRequest
             {
                 Id = parcelId ?? string.Empty,
                 Placed = placed,
-                Rejected = rejected.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList()
+                Rejected = items.Where(item => item.Rejected > 0).Select(item => item.Id).ToList(),
+                Items = items
             };
+            string summary = string.Join("；", items.Select(item =>
+                $"{item.Id} 请求{item.Requested}、装入{item.Delivered}、未送达{item.Rejected}"));
+            Prototype.Log?.Log($"包裹 {body.Id} 送达明细：{summary}。" );
             _ = PostNoResponseAsync(config, "/phone/parcel/result", body);
         }
 

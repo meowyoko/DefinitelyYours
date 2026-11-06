@@ -41,6 +41,7 @@ namespace AiPhone
         internal static ConfigEntry<int> DailyTransferLimitSetting;
         internal static ConfigEntry<string> AiNameSetting;
         internal static ConfigEntry<int> PhoneNumberSetting;
+        internal static ConfigEntry<int> DialogueTextSizeSetting;
         internal static ConfigEntry<string> NoteSignatureSetting;
         internal static ConfigEntry<int> ParcelValueLimitSetting;
         internal static ConfigEntry<int> ParcelPerWeekLimitSetting;
@@ -58,6 +59,9 @@ namespace AiPhone
         }
 
         internal static long PhoneNumber => Math.Max(1, PhoneNumberSetting?.Value ?? 10000);
+
+        internal static float DialogueTextScale =>
+            Mathf.Clamp(DialogueTextSizeSetting?.Value ?? 100, 100, 160) / 100f;
 
         internal static string NoteSignature
         {
@@ -658,8 +662,12 @@ namespace AiPhone
             }
 
             CloseFreeInputWindow();
-            CustomUIManager.Window(FreeInputWindowId, $"对 {AiName} 说", CustomUIManager.LAYER_OVERLAY)
-                .SetSize(440f, 190f)
+            float scale = DialogueTextScale;
+            CustomUIBuilder builder = CustomUIManager.Window(
+                    FreeInputWindowId,
+                    $"对 {AiName} 说",
+                    CustomUIManager.LAYER_OVERLAY)
+                .SetSize(440f * scale, 240f * scale)
                 .Center()
                 .SetDraggable(false)
                 .SetCloseOnEscape(true)
@@ -668,8 +676,12 @@ namespace AiPhone
                 .AddFlexibleSpace()
                 .AddButton("发送", SubmitFreeInput)
                 .AddButton("取消", CloseFreeInputWindow)
-                .End()
-                .Show();
+                .End();
+
+            DialogueTextScaling.ConfigureFreeInput(
+                builder.Handle.Get("message"),
+                SubmitFreeInput);
+            builder.Show();
         }
 
         private static void SubmitFreeInput()

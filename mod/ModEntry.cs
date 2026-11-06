@@ -58,6 +58,15 @@ namespace AiPhone
                 max: null,
                 tooltip: () => "拨打这个号码接通 AI 联系人。",
                 requiresRestart: false);
+            Prototype.DialogueTextSizeSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "dialogue_text_size",
+                100,
+                "Display",
+                () => "对话文字大小",
+                min: 100,
+                max: 160,
+                tooltip: () => "调整 NPC、电话对话气泡和自由输入框的文字大小。",
+                requiresRestart: false);
             Prototype.NoteSignatureSetting = ModHelper.GetConfig(manifest.ID).Define(
                 "note_signature",
                 string.Empty,

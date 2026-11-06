@@ -208,11 +208,12 @@ def _hint_items(items, cap):
                 iid = re.sub(r"[^A-Za-z0-9_.\-]", "", str(it.get("id") or ""))[:64]
                 name = " ".join(str(it.get("name") or catalog_name(iid) or iid).split())[:40]
                 cnt = it.get("count")
-                out.append(f"{name}({iid})" + (f"×{cnt}" if isinstance(cnt, int) else ""))
+                out.append(f"{name}({iid})" + (f"×{cnt}" if isinstance(cnt, int) else "")
+                           + catalog_grid(iid))
             elif isinstance(it, str):
                 iid = re.sub(r"[^A-Za-z0-9_.\-]", "", it)[:64]
                 if iid:
-                    out.append(f"{catalog_name(iid) or iid}({iid})")
+                    out.append(f"{catalog_name(iid) or iid}({iid})" + catalog_grid(iid))
     return out
 
 
@@ -316,6 +317,13 @@ def take_notes():
 def catalog_name(iid):
     c = catalog.get(iid)
     return c and c.get("name")
+
+
+def catalog_grid(iid):
+    c = catalog.get(iid)
+    if not c:
+        return ""
+    return f"[{c.get('gridWidth', 1)}x{c.get('gridHeight', 1)}/{c.get('gridCells', 1)}格]"
 
 
 def note_day(day):
@@ -427,7 +435,10 @@ class Handler(BaseHTTPRequestHandler):
                 new[iid] = {"name": " ".join(str(it.get("name") or iid).split())[:40],
                             "types": [str(t)[:32] for t in (it.get("types") or [])[:8] if isinstance(t, str)],
                             "baseValue": it.get("baseValue") if isinstance(it.get("baseValue"), (int, float)) else None,
-                            "contraband": it.get("contraband") is True, "stolen": it.get("stolen") is True}
+                            "contraband": it.get("contraband") is True, "stolen": it.get("stolen") is True,
+                            "gridWidth": max(1, min(99, it.get("gridWidth", 1))) if isinstance(it.get("gridWidth"), int) else 1,
+                            "gridHeight": max(1, min(99, it.get("gridHeight", 1))) if isinstance(it.get("gridHeight"), int) else 1,
+                            "gridCells": max(1, min(999, it.get("gridCells", 1))) if isinstance(it.get("gridCells"), int) else 1}
             with _lock:
                 catalog.clear()
                 catalog.update(new)
@@ -506,8 +517,31 @@ class Handler(BaseHTTPRequestHandler):
             pid = str(body.get("id") or "")[:32]
             placed = str(body.get("placed") or "")[:16]
             rejected = [str(r)[:64] for r in (body.get("rejected") or [])[:30] if isinstance(r, str)]
-            log("parcel result", pid, placed, rejected)
-            text = f"📦 包裹送达结果：{placed}" + (f"；被拒物品：{'、'.join(rejected)}" if rejected else "")
+            item_results = []
+            for it in (body.get("items") or [])[:30]:
+                if not isinstance(it, dict):
+                    continue
+                iid = re.sub(r"[^A-Za-z0-9_.\-]", "", str(it.get("id") or ""))[:64]
+                if not iid:
+                    continue
+                requested = it.get("requested") if isinstance(it.get("requested"), int) else 0
+                delivered = it.get("delivered") if isinstance(it.get("delivered"), int) else 0
+                rejected_amount = it.get("rejected") if isinstance(it.get("rejected"), int) else requested - delivered
+                requested = max(0, min(9999, requested))
+                delivered = max(0, min(requested, delivered))
+                rejected_amount = max(0, min(requested, rejected_amount))
+                item_results.append((iid, requested, delivered, rejected_amount))
+            log("parcel result", pid, placed, item_results or rejected)
+            text = f"📦 包裹送达结果：{placed}"
+            if item_results:
+                details = []
+                for iid, requested, delivered, rejected_amount in item_results:
+                    name = catalog_name(iid) or iid
+                    details.append(
+                        f"{name}({iid}) 请求{requested}、装入{delivered}、未送达{rejected_amount}")
+                text += "；" + "；".join(details)
+            elif rejected:
+                text += f"；被拒物品：{'、'.join(rejected)}"
             defer_note(text + f"（包裹 {pid}）")
             return self._json({"ok": True})
 
@@ -681,7 +715,8 @@ def tool_catalog(a):
         if isinstance(mv, (int, float)) and isinstance(c["baseValue"], (int, float)) and c["baseValue"] > mv:
             continue
         flags = ("违禁 " if c["contraband"] else "") + ("赃物 " if c["stolen"] else "")
-        rows.append(f"{iid} | {c['name']} | {','.join(c['types'])} | {c['baseValue']} {flags}".rstrip())
+        grid = f"{c.get('gridWidth', 1)}x{c.get('gridHeight', 1)}/{c.get('gridCells', 1)}格"
+        rows.append(f"{iid} | {c['name']} | {','.join(c['types'])} | {c['baseValue']} | {grid} {flags}".rstrip())
     more = f"\n…{len(rows) - limit} more, narrow the query" if len(rows) > limit else ""
     return (f"{len(catalog)} items in catalog, {len(rows)} match:\n" + "\n".join(rows[:limit]) + more), False
 

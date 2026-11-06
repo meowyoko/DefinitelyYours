@@ -103,10 +103,10 @@ Fetch audio with `GET /phone/audio/<id>` (token required). On timeout the server
 |---|---|---|
 | `POST /phone/hangup` | `{}` | player closed the phone mid-call; pending turn cancelled; a deferred note is stored |
 | `POST /phone/daily` | same shape as `/phone/call` | sent at bedtime on days with no call; pushed to the session as `kind="daily"` (model must **not** `phone_reply`) |
-| `POST /phone/catalog` | `{ "items": [{id,name,types[],baseValue,contraband,stolen}], "day": n }` | replaces `catalog.json` (≤3000 items) |
+| `POST /phone/catalog` | `{ "items": [{id,name,types[],baseValue,contraband,stolen,gridWidth,gridHeight,gridCells}], "day": n }` | replaces `catalog.json` (≤3000 items); grid fields describe one item/stack's bounding box and occupied cells |
 | `POST /phone/session` | `{ "day": n }` | **save loaded** at the start of day n: voids orders placed on/after n, re-queues a parcel that had been delivered on/after n, stores a deferred note |
 | `POST /phone/parcel/pickup` | `{ "day": n }` | shutter opened on day n → returns `{ "parcel": {id,style,items,note} }` or `{ "parcel": null }` |
-| `POST /phone/parcel/result` | `{ "id": "...", "placed": "front", "rejected": ["item_id", …] }` | mod reports what actually landed; stored as a deferred note |
+| `POST /phone/parcel/result` | `{ "id": "...", "placed": "front", "rejected": ["item_id", …], "items": [{"id":"item_id","requested":10,"delivered":8,"rejected":2}] }` | mod reports exact requested/delivered quantities; stored as a deferred note. The ID-only `rejected` list remains for compatibility |
 | `GET /phone/health` | — | `{ ok, protocol: 1, voice }`, no token |
 
 ---
@@ -122,7 +122,7 @@ Tools (`TOOLS` list in code):
 | `phone_open` / `phone_close` | start/stop the HTTP listener (keep closed when not playing; saves memory and attack surface) |
 | `phone_status` | line open? call in progress? waiting turns? voice? |
 | `phone_reply(turn_id, text, choices?, allow_free_input?, voice_text?, hangup?, transfer?)` | answer the waiting turn; `voice_text` is what gets synthesized (may be another language than `text`) |
-| `phone_gift_catalog(query?, type?, max_value?, limit?)` | browse `catalog.json` |
+| `phone_gift_catalog(query?, type?, max_value?, limit?)` | browse `catalog.json`, including each item's bounding size and occupied grid cells |
 | `phone_send_parcel(items[], note_body, note_title?, style?)` | queue one parcel for **last known day + 1**; replaces an undelivered order; refuses if that morning was already picked up |
 
 Behavioural rules for the model (in-world tone, one short line per turn, events go into choices, money/parcel cap checks, never reply to `daily`) live in the `INSTRUCTIONS` string and are sent at `initialize`. Change behaviour there, not in the mod.

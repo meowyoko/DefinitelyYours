@@ -31,6 +31,15 @@ namespace AiPhone
 
         [JsonProperty("stolen")]
         public bool Stolen { get; set; }
+
+        [JsonProperty("gridWidth")]
+        public int GridWidth { get; set; }
+
+        [JsonProperty("gridHeight")]
+        public int GridHeight { get; set; }
+
+        [JsonProperty("gridCells")]
+        public int GridCells { get; set; }
     }
 
     internal sealed class GiftHints
@@ -115,6 +124,24 @@ namespace AiPhone
 
         [JsonProperty("rejected")]
         public List<string> Rejected { get; set; } = new List<string>();
+
+        [JsonProperty("items")]
+        public List<ParcelItemResult> Items { get; set; } = new List<ParcelItemResult>();
+    }
+
+    internal sealed class ParcelItemResult
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("requested")]
+        public int Requested { get; set; }
+
+        [JsonProperty("delivered")]
+        public int Delivered { get; set; }
+
+        [JsonProperty("rejected")]
+        public int Rejected { get; set; }
     }
 
     internal sealed class SessionRequest

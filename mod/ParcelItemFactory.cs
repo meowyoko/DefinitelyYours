@@ -32,7 +32,7 @@ namespace AiPhone
             string style,
             IList<ParcelOrderItem> items,
             ParcelNote note,
-            IList<string> rejected)
+            IDictionary<string, int> packed)
         {
             GameItem parcel = DirectoryMaster.Item(ParcelItemId, true);
             if (parcel == null)
@@ -76,9 +76,11 @@ namespace AiPhone
 
             foreach (ParcelOrderItem line in items ?? Array.Empty<ParcelOrderItem>())
             {
-                if (!TryAddCompleteLine(inventory, line))
+                int added = TryAddAsMuchAsFits(inventory, line);
+                if (added > 0)
                 {
-                    rejected?.Add(line?.Id ?? string.Empty);
+                    packed.TryGetValue(line.Id, out int previous);
+                    packed[line.Id] = previous + added;
                 }
             }
 
@@ -232,17 +234,15 @@ namespace AiPhone
             });
         }
 
-        private static bool TryAddCompleteLine(GameInventory inventory, ParcelOrderItem line)
+        private static int TryAddAsMuchAsFits(GameInventory inventory, ParcelOrderItem line)
         {
             if (line == null || line.Amount <= 0 || string.IsNullOrWhiteSpace(line.Id))
             {
-                return false;
+                return 0;
             }
 
-            Dictionary<GameItem, int> baseline = inventory.childItems.ToDictionary(
-                item => item,
-                item => Math.Max(1, item.unitCount));
             int remaining = line.Amount;
+            int added = 0;
 
             while (remaining > 0)
             {
@@ -253,17 +253,21 @@ namespace AiPhone
                     if (!ParcelService.IsSafeParcelInstance(line.Id, item, out _))
                     {
                         item?.Destroy();
-                        RollBackLine(inventory, baseline);
-                        return false;
+                        break;
                     }
 
                     SlotMarker slot = inventory.TryFindOneValidInventorySlot(item);
-                    int maximum = item.MaxNumAdd(slot);
-                    if (slot == null || maximum <= 0)
+                    if (slot == null)
                     {
                         item.Destroy();
-                        RollBackLine(inventory, baseline);
-                        return false;
+                        break;
+                    }
+
+                    int maximum = item.MaxNumAdd(slot);
+                    if (maximum <= 0)
+                    {
+                        item.Destroy();
+                        break;
                     }
 
                     int amount = Math.Min(remaining, maximum);
@@ -271,18 +275,28 @@ namespace AiPhone
                     item.SetAmount(amount);
                     inventory.TryAcceptAll(item);
                     int accepted = CountAmount(inventory, line.Id) - before;
-                    if (accepted != amount)
+                    if (accepted <= 0)
                     {
                         if (item.parentInventory == null)
                         {
                             item.Destroy();
                         }
 
-                        RollBackLine(inventory, baseline);
-                        return false;
+                        break;
                     }
 
-                    remaining -= amount;
+                    accepted = Math.Min(accepted, amount);
+                    added += accepted;
+                    remaining -= accepted;
+                    if (accepted < amount)
+                    {
+                        if (item.parentInventory == null)
+                        {
+                            item.Destroy();
+                        }
+
+                        break;
+                    }
                 }
                 catch
                 {
@@ -291,12 +305,11 @@ namespace AiPhone
                         item.Destroy();
                     }
 
-                    RollBackLine(inventory, baseline);
-                    return false;
+                    break;
                 }
             }
 
-            return true;
+            return added;
         }
 
         private static int CountAmount(GameInventory inventory, string id)
@@ -313,21 +326,5 @@ namespace AiPhone
             return count;
         }
 
-        private static void RollBackLine(GameInventory inventory, Dictionary<GameItem, int> baseline)
-        {
-            foreach (GameItem item in inventory.childItems.ToArray())
-            {
-                if (!baseline.TryGetValue(item, out int oldAmount))
-                {
-                    item.Destroy();
-                    continue;
-                }
-
-                if (Math.Max(1, item.unitCount) != oldAmount)
-                {
-                    item.SetAmount(oldAmount);
-                }
-            }
-        }
     }
 }
