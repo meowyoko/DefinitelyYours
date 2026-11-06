@@ -59,7 +59,17 @@ namespace AiPhone
         private static Task loadSyncTask = Task.CompletedTask;
         private static Task lastDailyTask = Task.CompletedTask;
 
+        internal static void OnNewGameStarted(string _)
+        {
+            InitializeForSave("新游戏");
+        }
+
         internal static void OnGameLoaded()
+        {
+            InitializeForSave("读档");
+        }
+
+        private static void InitializeForSave(string source)
         {
             try
             {
@@ -68,7 +78,7 @@ namespace AiPhone
                 CatalogRequest catalog = BuildSafeCatalog(day);
                 if (!Prototype.TryLoadConfig(out PhoneConfig config, out string error))
                 {
-                    Prototype.Log?.Error($"包裹读档同步未发送：{error}" );
+                    Prototype.Log?.Error($"包裹{source}同步未发送：{error}" );
                     return;
                 }
 
@@ -76,7 +86,7 @@ namespace AiPhone
             }
             catch (Exception exception)
             {
-                Prototype.Log?.Error($"初始化包裹协议失败：{exception.GetType().Name}: {exception.Message}" );
+                Prototype.Log?.Error($"初始化包裹协议失败（{source}）：{exception.GetType().Name}: {exception.Message}" );
             }
         }
 
@@ -110,14 +120,19 @@ namespace AiPhone
             try
             {
                 int day = StoreStation.GetDayCounter();
-                if (!ParcelStateCache.TryMarkPickupAttempt(day))
+                if (!Prototype.TryLoadConfig(out PhoneConfig config, out string error))
+                {
+                    Prototype.Log?.Error($"包裹领取未发送：{error}" );
+                    return;
+                }
+
+                if (!EnsureCatalogReady(config, day))
                 {
                     return;
                 }
 
-                if (!Prototype.TryLoadConfig(out PhoneConfig config, out string error))
+                if (!ParcelStateCache.TryMarkPickupAttempt(day))
                 {
-                    Prototype.Log?.Error($"包裹领取未发送：{error}" );
                     return;
                 }
 
@@ -127,6 +142,25 @@ namespace AiPhone
             {
                 Prototype.Log?.Error($"准备包裹领取失败：{exception.GetType().Name}: {exception.Message}" );
             }
+        }
+
+        private static bool EnsureCatalogReady(PhoneConfig config, int day)
+        {
+            if (safeCatalog.Count > 0)
+            {
+                return true;
+            }
+
+            Prototype.Log?.Log("包裹安全清单尚未初始化，取件前自动重建并同步。" );
+            CatalogRequest catalog = BuildSafeCatalog(day);
+            if (safeCatalog.Count == 0)
+            {
+                Prototype.Log?.Error("包裹安全清单重建后仍为空，本次暂不领取，且不消耗当天领取机会。" );
+                return false;
+            }
+
+            loadSyncTask = SendLoadSyncAsync(config, day, catalog);
+            return true;
         }
 
         internal static GiftHints BuildGiftHints()

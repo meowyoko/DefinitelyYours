@@ -133,6 +133,7 @@ namespace AiPhone
 
             ModHook.OnModItemDirectoryInit += ParcelItemFactory.Register;
             ModHook.OnModItemDirectoryInit += LetterBookService.Register;
+            ModHook.OnNewGameStarted += ParcelService.OnNewGameStarted;
             ModHook.OnGameLoadedLate += ParcelService.OnGameLoaded;
             ModHook.OnGameLoadedLate += LetterBookService.OnGameLoaded;
             ModHook.OnGoingSleepLate += ParcelService.OnGoingSleepLate;
@@ -149,6 +150,7 @@ namespace AiPhone
 
             ModHook.OnModItemDirectoryInit -= ParcelItemFactory.Register;
             ModHook.OnModItemDirectoryInit -= LetterBookService.Register;
+            ModHook.OnNewGameStarted -= ParcelService.OnNewGameStarted;
             ModHook.OnGameLoadedLate -= ParcelService.OnGameLoaded;
             ModHook.OnGameLoadedLate -= LetterBookService.OnGameLoaded;
             ModHook.OnGoingSleepLate -= ParcelService.OnGoingSleepLate;
