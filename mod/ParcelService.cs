@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 
@@ -58,21 +59,28 @@ namespace AiPhone
             new Dictionary<string, CatalogItem>(StringComparer.Ordinal);
         private static Task loadSyncTask = Task.CompletedTask;
         private static Task lastDailyTask = Task.CompletedTask;
+        private static SessionRequest queuedSession;
+        private static string sessionReason = "load";
+        internal static Task<bool> SessionSyncTask { get; private set; } = Task.FromResult(true);
 
         internal static void OnNewGameStarted(string _)
         {
-            InitializeForSave("新游戏");
+            InitializeForSave("new");
         }
 
         internal static void OnGameLoaded()
         {
-            InitializeForSave("读档");
+            InitializeForSave("load");
         }
 
         private static void InitializeForSave(string source)
         {
             try
             {
+                Prototype.CancelActiveCall();
+                PhoneSaveContext.StartTimeline();
+                sessionReason = source;
+                queuedSession = null;
                 int day = StoreStation.GetDayCounter();
                 ParcelStateCache.OnGameLoaded(day);
                 CatalogRequest catalog = BuildSafeCatalog(day);
@@ -82,12 +90,37 @@ namespace AiPhone
                     return;
                 }
 
-                loadSyncTask = SendLoadSyncAsync(config, day, catalog);
+                EnsureSaveSynced(config, day, catalog);
             }
             catch (Exception exception)
             {
                 Prototype.Log?.Error($"初始化包裹协议失败（{source}）：{exception.GetType().Name}: {exception.Message}" );
             }
+        }
+
+        internal static void EnsureSaveSynced(PhoneConfig config, int day, CatalogRequest catalog = null)
+        {
+            if (!PhoneSaveContext.HasStableSaveId())
+            {
+                return;
+            }
+
+            var session = PhoneSaveContext.Capture(new SessionRequest
+            {
+                Day = day,
+                Reason = sessionReason,
+                OpeningMessage = sessionReason == "new" ? Prototype.OpeningMessageSetting?.Value : null
+            });
+            bool syncPendingOrSucceeded = !SessionSyncTask.IsCompleted
+                || (SessionSyncTask.IsCompletedSuccessfully && SessionSyncTask.Result);
+            if (queuedSession?.Timeline == session.Timeline && queuedSession.SaveId == session.SaveId && syncPendingOrSucceeded)
+            {
+                return;
+            }
+
+            queuedSession = session;
+            SessionSyncTask = SendSessionAsync(SessionSyncTask, config, session);
+            loadSyncTask = SendCatalogAsync(SessionSyncTask, config, catalog ?? BuildSafeCatalog(day));
         }
 
         internal static void OnGoingSleepLate()
@@ -105,9 +138,10 @@ namespace AiPhone
                     return;
                 }
 
-                object body = Prototype.CreateDailyRequest();
+                EnsureSaveSynced(config, StoreStation.GetDayCounter());
+                Prototype.CallRequest body = Prototype.CreateDailyRequest();
                 PhoneStateCache.CaptureRecorderBaseline();
-                lastDailyTask = PostNoResponseAsync(config, "/phone/daily", body);
+                lastDailyTask = SendDailyAsync(SessionSyncTask, config, body);
             }
             catch (Exception exception)
             {
@@ -126,6 +160,7 @@ namespace AiPhone
                     return;
                 }
 
+                EnsureSaveSynced(config, day);
                 if (!EnsureCatalogReady(config, day))
                 {
                     return;
@@ -136,7 +171,7 @@ namespace AiPhone
                     return;
                 }
 
-                _ = PickupAsync(config, day);
+                _ = PickupAsync(config, PhoneSaveContext.Capture(new ParcelPickupRequest { Day = day }));
             }
             catch (Exception exception)
             {
@@ -159,7 +194,7 @@ namespace AiPhone
                 return false;
             }
 
-            loadSyncTask = SendLoadSyncAsync(config, day, catalog);
+            loadSyncTask = SendCatalogAsync(SessionSyncTask, config, catalog);
             return true;
         }
 
@@ -309,7 +344,7 @@ namespace AiPhone
 
             safeCatalog = items;
             Prototype.Log?.Log($"本地安全清单已建立：{items.Count} 项；跳过异常定义 {errors} 项。" );
-            return new CatalogRequest { Day = day, Items = items.Values.OrderBy(item => item.Id).ToList() };
+            return PhoneSaveContext.Capture(new CatalogRequest { Day = day, Items = items.Values.OrderBy(item => item.Id).ToList() });
         }
 
         private static bool IsSafeDefinition(string id, GameItem item, string directoryName, out string reason)
@@ -399,20 +434,52 @@ namespace AiPhone
             return result;
         }
 
-        private static async Task SendLoadSyncAsync(PhoneConfig config, int day, CatalogRequest catalog)
+        private static async Task<bool> SendSessionAsync(Task previousSync, PhoneConfig config, SessionRequest session)
         {
-            await PostNoResponseAsync(config, "/phone/session", new SessionRequest { Day = day }).ConfigureAwait(false);
+            await previousSync.ConfigureAwait(false);
+            if (session.Timeline != PhoneSaveContext.CurrentTimeline)
+            {
+                return false;
+            }
+
+            using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+            {
+                return await PostNoResponseAsync(config, "/phone/session", session, timeout.Token).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task SendCatalogAsync(Task sessionSync, PhoneConfig config, CatalogRequest catalog)
+        {
+            await sessionSync.ConfigureAwait(false);
+            if (catalog.Timeline != PhoneSaveContext.CurrentTimeline)
+            {
+                return;
+            }
             await PostNoResponseAsync(config, "/phone/catalog", catalog).ConfigureAwait(false);
         }
 
-        private static async Task PickupAsync(PhoneConfig config, int day)
+        private static async Task SendDailyAsync(Task sessionSync, PhoneConfig config, Prototype.CallRequest body)
+        {
+            await sessionSync.ConfigureAwait(false);
+            if (body.Timeline == PhoneSaveContext.CurrentTimeline)
+            {
+                await PostNoResponseAsync(config, "/phone/daily", body).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task PickupAsync(PhoneConfig config, ParcelPickupRequest pickup)
         {
             await loadSyncTask.ConfigureAwait(false);
             await lastDailyTask.ConfigureAwait(false);
+            if (pickup.Timeline != PhoneSaveContext.CurrentTimeline)
+            {
+                return;
+            }
+            int day = pickup.Day;
             Stopwatch stopwatch = Stopwatch.StartNew();
             try
             {
-                string json = JsonConvert.SerializeObject(new ParcelPickupRequest { Day = day });
+                string json = JsonConvert.SerializeObject(pickup);
                 Prototype.Log?.Log($"发出请求：POST /phone/parcel/pickup；day={day}" );
                 using (var request = CreateRequest(config, "/phone/parcel/pickup", json))
                 using (HttpResponseMessage response = await Http.SendAsync(request).ConfigureAwait(false))
@@ -427,7 +494,13 @@ namespace AiPhone
                     Prototype.Log?.Log($"收到响应：POST /phone/parcel/pickup，耗时 {stopwatch.ElapsedMilliseconds} ms；parcel={(result?.Parcel == null ? "null" : result.Parcel.Id)}" );
                     if (result?.Parcel != null)
                     {
-                        Prototype.EnqueueMainThread(() => HandleParcel(day, config, result.Parcel));
+                        Prototype.EnqueueMainThread(() =>
+                        {
+                            if (pickup.Timeline == PhoneSaveContext.CurrentTimeline)
+                            {
+                                HandleParcel(day, config, result.Parcel);
+                            }
+                        });
                     }
                 }
             }
@@ -609,20 +682,20 @@ namespace AiPhone
                     };
                 })
                 .ToList();
-            var body = new ParcelResultRequest
+            var body = PhoneSaveContext.Capture(new ParcelResultRequest
             {
                 Id = parcelId ?? string.Empty,
                 Placed = placed,
                 Rejected = items.Where(item => item.Rejected > 0).Select(item => item.Id).ToList(),
                 Items = items
-            };
+            });
             string summary = string.Join("；", items.Select(item =>
                 $"{item.Id} 请求{item.Requested}、装入{item.Delivered}、未送达{item.Rejected}"));
             Prototype.Log?.Log($"包裹 {body.Id} 送达明细：{summary}。" );
             _ = PostNoResponseAsync(config, "/phone/parcel/result", body);
         }
 
-        private static async Task PostNoResponseAsync(PhoneConfig config, string path, object body)
+        private static async Task<bool> PostNoResponseAsync(PhoneConfig config, string path, object body, CancellationToken cancellationToken = default)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             try
@@ -632,7 +705,8 @@ namespace AiPhone
                 using (var request = CreateRequest(config, path, json))
                 using (HttpResponseMessage response = await Http.SendAsync(
                     request,
-                    HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken).ConfigureAwait(false))
                 {
                     if (!response.IsSuccessStatusCode)
                     {
@@ -640,11 +714,13 @@ namespace AiPhone
                     }
 
                     Prototype.Log?.Log($"收到响应：POST {path}，耗时 {stopwatch.ElapsedMilliseconds} ms" );
+                    return true;
                 }
             }
             catch (Exception exception)
             {
                 Prototype.Log?.Error($"请求失败：POST {path}；{exception.GetType().Name}: {exception.Message}，耗时 {stopwatch.ElapsedMilliseconds} ms" );
+                return false;
             }
         }
 

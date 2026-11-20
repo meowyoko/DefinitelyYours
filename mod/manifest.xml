@@ -3,8 +3,8 @@
   <ID>ai_phone</ID>
   <Name>Definitely Yours</Name>
   <Author>凛 &amp; Ciel &amp; Gio</Author>
-  <ModVersion>1.7.1</ModVersion>
-  <Description>AI 电话协议 v1：语音通话、状态同步、晨间包裹与实体来信册。</Description>
+  <ModVersion>2.0.0</ModVersion>
+  <Description>AI 电话协议 v1：语音通话、随机事件、状态同步、晨间包裹与实体来信册。</Description>
   <GameVersions>
     <Version>0.46D</Version>
   </GameVersions>

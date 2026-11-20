@@ -16,6 +16,22 @@ namespace AiPhone
                 () => "纯文字模式",
                 () => "开启后不请求或播放语音。",
                 false);
+            Prototype.TextLanguageSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "text_language",
+                string.Empty,
+                "Phone",
+                () => "屏幕文字语言",
+                choices: null,
+                tooltip: () => "适用于电话台词和选项，例如简体中文。留空沿用电话服务设置，从下一轮生效。",
+                requiresRestart: false);
+            Prototype.VoiceLanguageSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "voice_language",
+                string.Empty,
+                "Phone",
+                () => "语音语言",
+                choices: null,
+                tooltip: () => "适用于通话语音稿，例如 English。留空沿用电话服务设置，从下一轮生效。",
+                requiresRestart: false);
             Prototype.SendRecorderSetting = ModHelper.GetConfig(manifest.ID).Define(
                 "send_recorder",
                 true,
@@ -57,6 +73,22 @@ namespace AiPhone
                 min: 1,
                 max: null,
                 tooltip: () => "拨打这个号码接通 AI 联系人。",
+                requiresRestart: false);
+            Prototype.OpeningMessageSetting = ModHelper.GetConfig(manifest.ID).Define(
+                OpeningMessageInputPatch.SettingKey,
+                string.Empty,
+                "Phone",
+                () => "开局留言",
+                choices: null,
+                tooltip: () => "用自己的口吻和电话伙伴打个招呼。新建电话会话时发送，留空使用默认留言。",
+                requiresRestart: false);
+            Prototype.SessionResetSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "phone_session_reset",
+                string.Empty,
+                "Phone",
+                () => "为当前存档换新电话会话",
+                choices: null,
+                tooltip: () => "下次拨号或日报时，命令行模式会为这个存档开启新会话。",
                 requiresRestart: false);
             Prototype.DialogueTextSizeSetting = ModHelper.GetConfig(manifest.ID).Define(
                 "dialogue_text_size",
@@ -107,6 +139,62 @@ namespace AiPhone
                 () => "允许包裹包含赃物",
                 () => "关闭时，赃物不会进入安全清单，也不会被本地生成。",
                 false);
+            Prototype.RandomEventsEnabledSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "random_events_enabled",
+                true,
+                "Events",
+                () => "随机事件",
+                () => "允许电话里的 AI 偶尔遇到自己那边发生的事。",
+                false);
+            Prototype.EventChanceSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "random_event_chance",
+                33,
+                "Events",
+                () => "事件概率",
+                min: 0,
+                max: 100,
+                tooltip: () => "普通来电触发随机事件的百分比；连续剧到期集不受影响。",
+                requiresRestart: false);
+            Prototype.EventMinCallGapSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "random_event_min_call_gap",
+                2,
+                "Events",
+                () => "两次事件最少间隔通话数",
+                min: 0,
+                max: null,
+                tooltip: () => "事件发生后，至少经过这么多通电话才会再次随机抽取。",
+                requiresRestart: false);
+            Prototype.UnreachableEnabledSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "random_event_unreachable_enabled",
+                true,
+                "Events",
+                () => "允许偶尔打不通",
+                () => "关闭后，普通事件和连续剧都不会触发无法接通。",
+                false);
+            Prototype.UnreachableChanceSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "random_event_unreachable_chance",
+                10,
+                "Events",
+                () => "打不通频率",
+                min: 0,
+                max: 100,
+                tooltip: () => "普通事件触发后，改从打不通事件池抽取的百分比；连续剧到期集不受影响。",
+                requiresRestart: false);
+            Prototype.RentProtectionSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "random_event_rent_protection",
+                false,
+                "Events",
+                () => "交租保护",
+                () => "开启后，交租当天或现金不足以支付当期房租时不会触发打不通。",
+                false);
+            Prototype.ForcedEventSetting = ModHelper.GetConfig(manifest.ID).Define(
+                "random_event_force_next",
+                string.Empty,
+                "Events",
+                () => "调试：下一通强制事件 ID",
+                choices: null,
+                tooltip: () => "填写 events.txt 中的 id；同一个填写值只使用一次，并无视概率和每日限制。再次测试同一项时先清空再填回。",
+                requiresRestart: false);
             RegisterHooks();
             log.Log($"Definitely Yours 已初始化；{Prototype.AiName} 的直拨号码是 {Prototype.PhoneNumber}。" );
         }
@@ -114,7 +202,7 @@ namespace AiPhone
         public void OnEnable()
         {
             RegisterHooks();
-            log.Log($"协议 v1.7.1 已启用。可直拨 {Prototype.PhoneNumber} 或点击电话簿中的 {Prototype.AiName}。" );
+            log.Log($"电话协议 v1 已启用。可直拨 {Prototype.PhoneNumber} 或点击电话簿中的 {Prototype.AiName}。" );
         }
 
         public void OnDisable()
@@ -134,8 +222,10 @@ namespace AiPhone
             ModHook.OnModItemDirectoryInit += ParcelItemFactory.Register;
             ModHook.OnModItemDirectoryInit += LetterBookService.Register;
             ModHook.OnNewGameStarted += ParcelService.OnNewGameStarted;
+            ModHook.OnNewGameStarted += RandomEventService.OnNewGameStarted;
             ModHook.OnGameLoadedLate += ParcelService.OnGameLoaded;
             ModHook.OnGameLoadedLate += LetterBookService.OnGameLoaded;
+            ModHook.OnGameLoadedLate += RandomEventService.OnGameLoaded;
             ModHook.OnGoingSleepLate += ParcelService.OnGoingSleepLate;
             ModHook.OnShutterOpenedLate += ParcelService.OnShutterOpenedLate;
             hooksRegistered = true;
@@ -151,8 +241,10 @@ namespace AiPhone
             ModHook.OnModItemDirectoryInit -= ParcelItemFactory.Register;
             ModHook.OnModItemDirectoryInit -= LetterBookService.Register;
             ModHook.OnNewGameStarted -= ParcelService.OnNewGameStarted;
+            ModHook.OnNewGameStarted -= RandomEventService.OnNewGameStarted;
             ModHook.OnGameLoadedLate -= ParcelService.OnGameLoaded;
             ModHook.OnGameLoadedLate -= LetterBookService.OnGameLoaded;
+            ModHook.OnGameLoadedLate -= RandomEventService.OnGameLoaded;
             ModHook.OnGoingSleepLate -= ParcelService.OnGoingSleepLate;
             ModHook.OnShutterOpenedLate -= ParcelService.OnShutterOpenedLate;
             hooksRegistered = false;

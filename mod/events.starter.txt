@@ -1,0 +1,11 @@
+id: starter-lost-signal
+type: talk
+text: 空间站一只旧广播喇叭总在半夜播出同一小段旋律。伙伴顺着线路找了半天，才发现是维修员用它提醒自己换班。
+---
+id: starter-wrong-delivery
+type: talk
+text: 货运系统误把一份快递提醒发给了伙伴，备注是「务必轻拿轻放」。核对收件人后，伙伴才知道那是附近温室订的一盒草莓。
+---
+id: starter-station-lights
+type: talk
+text: 站内的一扇观景窗换了新灯，走廊摄像头第一次拍清了窗外的夜景。伙伴留意到那片灯光一直亮着，想起老板可能还在店里忙。

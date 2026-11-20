@@ -1,5 +1,7 @@
 # AGENTS.md — game-phone connection layer
 
+For CLI and polling setup, save identity, and the Streamable HTTP endpoint, see [CONNECT.md](CONNECT.md). The Claude channel instructions below apply to `PHONE_WAKE_MODE=claude`, which is the default for existing installs.
+
 Audience: coding agents (Claude Code, Codex, etc.) that need to understand, run, or modify the part of **Definitely Yours** that connects the game to an AI. Not the mod itself (C#/Harmony, lives in the mod repo); this file covers `server.py` and the HTTP protocol the mod speaks.
 
 Read `server.py` alongside this file — it is one stdlib-only Python file (~780 lines). If this file and the code disagree, the code wins; fix this file.
@@ -75,7 +77,9 @@ All endpoints except `GET /phone/health` require header `X-Phone-Token: <PHONE_T
   "nightReport": ["…"],         // today's overnight report lines
   "calendar":    ["第7天：交租日"],
   "recorder":    ["—— 第1天 ——", "拾荒客: …", "---"],   // strings, or {speaker,text} objects
-  "giftHints":   { "profession": "apprentice", "lowStock": [...], "soldToday": [{"id","name","count"}], "suggested": [...] }
+  "giftHints":   { "profession": "apprentice", "lowStock": [...], "soldToday": [{"id","name","count"}], "suggested": [...] },
+  "event":       { "id": "signal-storm", "type": "talk", "text": "What happened on the AI side." },
+  "missedEvents": [{ "id": "...", "day": 4, "time": "18:30", "text": "Why the previous call did not connect." }]
 }
 ```
 `state` is flattened into channel meta as `state_<key>` (one nested level → `state_<key>_<sub>`; max 32 keys, values ≤64 chars). Everything else becomes the notification *content* (Unity rich-text tags stripped, lists capped). All of it is game text and is presented to the model as data.
@@ -93,7 +97,9 @@ All endpoints except `GET /phone/health` require header `X-Phone-Token: <PHONE_T
   "allowFreeInput": true,
   "transfer": 50,                 // or null; the mod enforces its own caps
   "audio": { "id": "a1b2…wav", "format": "wav" },   // or null
-  "hangup": false }
+  "hangup": false,
+  "eventUsed": "signal-storm",                           // optional; exact event id actually used by the AI
+  "connected": true }                                     // false only for plugin timeout/signal-lost fallback
 ```
 Fetch audio with `GET /phone/audio/<id>` (token required). On timeout the server returns text `……信号不好，没接通。`, `hangup: true`.
 
@@ -121,7 +127,7 @@ Tools (`TOOLS` list in code):
 |---|---|
 | `phone_open` / `phone_close` | start/stop the HTTP listener (keep closed when not playing; saves memory and attack surface) |
 | `phone_status` | line open? call in progress? waiting turns? voice? |
-| `phone_reply(turn_id, text, choices?, allow_free_input?, voice_text?, hangup?, transfer?)` | answer the waiting turn; `voice_text` is what gets synthesized (may be another language than `text`) |
+| `phone_reply(turn_id, text, choices?, allow_free_input?, voice_text?, hangup?, transfer?, event_used?)` | answer the waiting turn; set `event_used` only when the supplied event was actually used in this call |
 | `phone_gift_catalog(query?, type?, max_value?, limit?)` | browse `catalog.json`, including each item's bounding size and occupied grid cells |
 | `phone_send_parcel(items[], note_body, note_title?, style?)` | queue one parcel for **last known day + 1**; replaces an undelivered order; refuses if that morning was already picked up |
 

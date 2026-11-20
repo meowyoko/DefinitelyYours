@@ -130,8 +130,7 @@ namespace AiPhone
 
         private static string CurrentSaveKey()
         {
-            PlayerStore store = PlayerStore.Instance;
-            return $"{store.saveSlotId}:{store.runID ?? string.Empty}:{store.runNumber}";
+            return PhoneSaveContext.CurrentSaveId();
         }
 
         private static CacheData Load()

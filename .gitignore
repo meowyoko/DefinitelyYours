@@ -1,8 +1,11 @@
 # secrets and runtime state: never commit
 .env
+voice.env
 !.env.example
 catalog.json
 parcels.json
+parcels-by-save.json
+sessions.json
 audio/
 *.bak*
 __pycache__/
@@ -19,6 +22,8 @@ obj/
 
 # local mod configuration and test data
 mod/config.json
+persona.md
+events.txt
 *.log
 GameLog_*.txt
 Player.log
@@ -32,3 +37,8 @@ ModData/
 /AGENTS.md
 /mod/AGENTS.md
 /mod/HANDOFF.md
+/.phone-test-state/
+/phone-test/test-config.json
+/phone-test/player-config.json
+/phone-test/dsh-mcp.local.yml
+/dist/

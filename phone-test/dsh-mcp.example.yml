@@ -1,0 +1,16 @@
+- id: credentials
+  disabled: false
+- id: authorization
+  disabled: false
+- id: deepseek-account
+  disabled: false
+- insert:
+    - id: definitely-yours-phone
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: game_phone
+        transport: streamable-http
+        url: http://127.0.0.1:3901/mcp
+        failOnStartupError: true
+        headers:
+          Authorization: !!js '`Bearer ${process.env.PHONE_MCP_TOKEN}`'

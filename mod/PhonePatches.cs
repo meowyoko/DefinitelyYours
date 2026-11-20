@@ -27,26 +27,39 @@ namespace AiPhone
         private static readonly ConcurrentQueue<Action> NextFrameActions = new ConcurrentQueue<Action>();
         private static ChoiceOption[] activeOptions = Array.Empty<ChoiceOption>();
         private static int requestEpoch;
+        private static string callToken;
         private static bool isActiveCall;
         private static bool isWaitingForResponse;
         private static bool serverWillHangUp;
+        private static bool localUnreachable;
         private static AudioClip dynamicClip;
         private static float dynamicClipEndsAt;
         private static bool hangUpWhenAudioStops;
 
         internal static ModLog Log;
         internal static ConfigEntry<bool> TextOnlySetting;
+        internal static ConfigEntry<string> TextLanguageSetting;
+        internal static ConfigEntry<string> VoiceLanguageSetting;
         internal static ConfigEntry<bool> SendRecorderSetting;
         internal static ConfigEntry<int> SingleTransferLimitSetting;
         internal static ConfigEntry<int> DailyTransferLimitSetting;
         internal static ConfigEntry<string> AiNameSetting;
         internal static ConfigEntry<int> PhoneNumberSetting;
+        internal static ConfigEntry<string> OpeningMessageSetting;
+        internal static ConfigEntry<string> SessionResetSetting;
         internal static ConfigEntry<int> DialogueTextSizeSetting;
         internal static ConfigEntry<string> NoteSignatureSetting;
         internal static ConfigEntry<int> ParcelValueLimitSetting;
         internal static ConfigEntry<int> ParcelPerWeekLimitSetting;
         internal static ConfigEntry<bool> AllowContrabandSetting;
         internal static ConfigEntry<bool> AllowStolenSetting;
+        internal static ConfigEntry<bool> RandomEventsEnabledSetting;
+        internal static ConfigEntry<int> EventChanceSetting;
+        internal static ConfigEntry<int> EventMinCallGapSetting;
+        internal static ConfigEntry<bool> UnreachableEnabledSetting;
+        internal static ConfigEntry<int> UnreachableChanceSetting;
+        internal static ConfigEntry<bool> RentProtectionSetting;
+        internal static ConfigEntry<string> ForcedEventSetting;
         internal static Dialogue ActiveChoiceDialogue;
 
         internal static string AiName
@@ -76,12 +89,22 @@ namespace AiPhone
         {
             isActiveCall = true;
             serverWillHangUp = false;
+            localUnreachable = false;
+            callToken = Guid.NewGuid().ToString("N");
             ParcelStateCache.MarkCallToday();
             int epoch = ++requestEpoch;
             ActiveChoiceDialogue = null;
             activeOptions = Array.Empty<ChoiceOption>();
             CloseFreeInputWindow();
             ReleaseDynamicClip(true);
+
+            RandomEventSelection eventSelection = RandomEventService.BeginCall();
+            if (eventSelection?.IsUnreachable == true)
+            {
+                ShowLocalUnreachable();
+                return;
+            }
+
             ShowWaiting();
 
             if (!TryLoadConfig(out PhoneConfig config, out string configError))
@@ -90,8 +113,12 @@ namespace AiPhone
                 return;
             }
 
+            ParcelService.EnsureSaveSynced(config, StoreStation.GetDayCounter());
             bool textOnly = TextOnlySetting?.Value ?? false;
             CallRequest body = CreateContextRequest(beginCall: true);
+            body.CallToken = callToken;
+            body.Event = eventSelection?.Event;
+            body.MissedEvents = RandomEventService.ReadMissedEvents();
 
             Log?.Log(
                 $"发出请求：POST /phone/call；textOnly={textOnly}；cash={body.State.Cash}；day={body.State.Day ?? "null"}；" +
@@ -100,7 +127,7 @@ namespace AiPhone
             _ = PostAsync(epoch, config, "/phone/call", body, textOnly);
         }
 
-        internal static object CreateDailyRequest()
+        internal static CallRequest CreateDailyRequest()
         {
             return CreateContextRequest(beginCall: false);
         }
@@ -124,10 +151,11 @@ namespace AiPhone
                 ? PhoneStateCache.BeginCall(cash, sendRecorder)
                 : PhoneStateCache.ReadCallMemory(sendRecorder);
             RunStats runStats = RunStats.Current;
-            return new CallRequest
+            return PhoneSaveContext.Capture(new CallRequest
             {
                 Contact = AiName,
                 Number = PhoneNumber.ToString(),
+                OpeningMessage = OpeningMessageSetting?.Value,
                 TextOnly = TextOnlySetting?.Value ?? false,
                 State = new CallState
                 {
@@ -155,7 +183,7 @@ namespace AiPhone
                 Calendar = GameContextReader.ReadCalendar(),
                 NightReport = GameContextReader.ReadNightReport(),
                 GiftHints = ParcelService.BuildGiftHints()
-            };
+            }, includeReset: true);
         }
 
         internal static bool IsActiveChoice(Dialogue dialogue)
@@ -236,10 +264,16 @@ namespace AiPhone
                 NotifyManualHangup();
             }
 
-            PhoneStateCache.CaptureRecorderBaseline();
+            if (!localUnreachable)
+            {
+                PhoneStateCache.CaptureRecorderBaseline();
+            }
+
+            RandomEventService.EndCall();
             isActiveCall = false;
             isWaitingForResponse = false;
             serverWillHangUp = false;
+            localUnreachable = false;
             requestEpoch++;
             ActiveChoiceDialogue = null;
             activeOptions = Array.Empty<ChoiceOption>();
@@ -263,13 +297,14 @@ namespace AiPhone
             }
 
             bool textOnly = TextOnlySetting?.Value ?? false;
-            var body = new ChoiceRequest
+            var body = PhoneSaveContext.Capture(new ChoiceRequest
             {
+                CallToken = callToken,
                 Index = index,
                 Text = text,
                 TextOnly = textOnly,
                 State = CreateChoiceState()
-            };
+            });
             Log?.Log($"发出请求：POST /phone/choice；index={(index.HasValue ? index.Value.ToString() : "null")}；textOnly={textOnly}");
             _ = PostAsync(epoch, config, "/phone/choice", body, textOnly);
         }
@@ -281,6 +316,11 @@ namespace AiPhone
             try
             {
                 string json = JsonConvert.SerializeObject(requestBody);
+                await ParcelService.SessionSyncTask.ConfigureAwait(false);
+                if (!IsCurrent(epoch))
+                {
+                    return;
+                }
                 using (var request = new HttpRequestMessage(HttpMethod.Post, config.BaseUrl + path))
                 {
                     request.Headers.TryAddWithoutValidation(TokenHeader, config.Token);
@@ -300,6 +340,21 @@ namespace AiPhone
                             throw new InvalidOperationException("响应缺少 text");
                         }
 
+                        bool initialReply = path == "/phone/call";
+                        MainThreadActions.Enqueue(() =>
+                        {
+                            if (!IsCurrent(epoch))
+                            {
+                                return;
+                            }
+
+                            RandomEventService.ConfirmUsed(phoneResponse.EventUsed);
+                            if (initialReply && phoneResponse.Connected != false)
+                            {
+                                RandomEventService.AcknowledgeMissedEvents();
+                            }
+                        });
+
                         Log?.Log($"收到响应：POST {path}，耗时 {stopwatch.ElapsedMilliseconds} ms");
                         byte[] audioBytes = null;
                         string audioWarning = null;
@@ -318,7 +373,6 @@ namespace AiPhone
                             }
                         }
 
-                        stopwatch.Stop();
                         byte[] completedAudio = audioBytes;
                         string completedAudioWarning = audioWarning;
                         MainThreadActions.Enqueue(() =>
@@ -334,6 +388,13 @@ namespace AiPhone
                             }
 
                             ShowResponse(phoneResponse, completedAudio);
+                            stopwatch.Stop();
+                            if (initialReply && !textOnly)
+                            {
+                                string result = dynamicClip != null ? "已播放语音"
+                                    : phoneResponse.Connected == false ? "未接通" : "转为纯文字";
+                                Log?.Log($"首轮语音耗时 {stopwatch.Elapsed.TotalSeconds:F2} 秒（从拨号请求到显示回复）：{result}。");
+                            }
                         });
                     }
                 }
@@ -377,17 +438,18 @@ namespace AiPhone
             }
 
             Log?.Log("发出请求：POST /phone/hangup");
-            _ = NotifyManualHangupAsync(config);
+            var body = PhoneSaveContext.Capture(new HangupRequest { CallToken = callToken });
+            _ = NotifyManualHangupAsync(config, body);
         }
 
-        private static async Task NotifyManualHangupAsync(PhoneConfig config)
+        private static async Task NotifyManualHangupAsync(PhoneConfig config, HangupRequest body)
         {
             try
             {
                 using (var request = new HttpRequestMessage(HttpMethod.Post, config.BaseUrl + "/phone/hangup"))
                 {
                     request.Headers.TryAddWithoutValidation(TokenHeader, config.Token);
-                    request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+                    request.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
                     using (HttpResponseMessage response = await Http.SendAsync(
                         request,
                         HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
@@ -723,6 +785,18 @@ namespace AiPhone
             DialoguePhoneUIManager.Instance.StartDialogue(waiting);
         }
 
+        private static void ShowLocalUnreachable()
+        {
+            serverWillHangUp = true;
+            localUnreachable = true;
+            isWaitingForResponse = false;
+            Dialogue failure = new Dialogue()
+                .SetText(AiName, "……暂时无法接通。")
+                .SetEndAction(HangUp);
+            DialoguePhoneUIManager.Instance.StartDialogue(failure);
+            Log?.Log("随机事件在本地触发无法接通；未请求电话插件。" );
+        }
+
         private static void FailOnMainThread(int epoch, string reason)
         {
             MainThreadActions.Enqueue(() =>
@@ -844,11 +918,17 @@ namespace AiPhone
 
         private static void HangUp()
         {
-            Log?.Log("服务端要求挂断电话。");
-            PhoneStateCache.CaptureRecorderBaseline();
+            Log?.Log("电话已挂断。");
+            if (!localUnreachable)
+            {
+                PhoneStateCache.CaptureRecorderBaseline();
+            }
+
+            RandomEventService.EndCall();
             isActiveCall = false;
             isWaitingForResponse = false;
             serverWillHangUp = false;
+            localUnreachable = false;
             requestEpoch++;
             ActiveChoiceDialogue = null;
             activeOptions = Array.Empty<ChoiceOption>();
@@ -866,14 +946,28 @@ namespace AiPhone
             public bool IsFreeInput { get; set; }
         }
 
-        private sealed class CallRequest
+        internal abstract class PhoneTurnRequest : PhoneSaveContext
         {
+            [JsonProperty("textOnly")]
+            public bool TextOnly { get; set; }
+
+            [JsonProperty("textLanguage", NullValueHandling = NullValueHandling.Ignore)]
+            public string TextLanguage { get; } = TextLanguageSetting?.Value?.Trim();
+
+            [JsonProperty("voiceLanguage", NullValueHandling = NullValueHandling.Ignore)]
+            public string VoiceLanguage { get; } = VoiceLanguageSetting?.Value?.Trim();
+        }
+
+        internal sealed class CallRequest : PhoneTurnRequest
+        {
+            [JsonProperty("callToken", NullValueHandling = NullValueHandling.Ignore)]
+            public string CallToken { get; set; }
             [JsonProperty("contact")]
             public string Contact { get; set; }
             [JsonProperty("number")]
             public string Number { get; set; }
-            [JsonProperty("textOnly")]
-            public bool TextOnly { get; set; }
+            [JsonProperty("openingMessage", NullValueHandling = NullValueHandling.Ignore)]
+            public string OpeningMessage { get; set; }
             [JsonProperty("state")]
             public CallState State { get; set; }
 
@@ -894,9 +988,15 @@ namespace AiPhone
 
             [JsonProperty("giftHints")]
             public GiftHints GiftHints { get; set; }
+
+            [JsonProperty("event", NullValueHandling = NullValueHandling.Ignore)]
+            public PhoneEventPayload Event { get; set; }
+
+            [JsonProperty("missedEvents", NullValueHandling = NullValueHandling.Ignore)]
+            public MissedEventPayload[] MissedEvents { get; set; }
         }
 
-        private sealed class CallState
+        internal sealed class CallState
         {
             [JsonProperty("cash")]
             public object Cash { get; set; }
@@ -949,15 +1049,20 @@ namespace AiPhone
             public int ParcelMaxValue { get; set; }
         }
 
-        private sealed class ChoiceRequest
+        private sealed class HangupRequest : PhoneSaveContext
         {
+            [JsonProperty("callToken")]
+            public string CallToken { get; set; }
+        }
+
+        private sealed class ChoiceRequest : PhoneTurnRequest
+        {
+            [JsonProperty("callToken")]
+            public string CallToken { get; set; }
             [JsonProperty("index")]
             public int? Index { get; set; }
             [JsonProperty("text")]
             public string Text { get; set; }
-            [JsonProperty("textOnly")]
-            public bool TextOnly { get; set; }
-
             [JsonProperty("state")]
             public ChoiceState State { get; set; }
         }
@@ -1001,6 +1106,12 @@ namespace AiPhone
 
             [JsonProperty("transfer")]
             public int? Transfer { get; set; }
+
+            [JsonProperty("eventUsed")]
+            public string EventUsed { get; set; }
+
+            [JsonProperty("connected")]
+            public bool? Connected { get; set; }
         }
 
         private sealed class AudioDescriptor

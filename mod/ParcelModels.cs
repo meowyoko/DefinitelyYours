@@ -3,7 +3,7 @@ using Newtonsoft.Json;
 
 namespace AiPhone
 {
-    internal sealed class CatalogRequest
+    internal sealed class CatalogRequest : PhoneSaveContext
     {
         [JsonProperty("day")]
         public int Day { get; set; }
@@ -69,7 +69,7 @@ namespace AiPhone
         public int Count { get; set; }
     }
 
-    internal sealed class ParcelPickupRequest
+    internal sealed class ParcelPickupRequest : PhoneSaveContext
     {
         [JsonProperty("day")]
         public int Day { get; set; }
@@ -114,7 +114,7 @@ namespace AiPhone
         public string Body { get; set; }
     }
 
-    internal sealed class ParcelResultRequest
+    internal sealed class ParcelResultRequest : PhoneSaveContext
     {
         [JsonProperty("id")]
         public string Id { get; set; }
@@ -144,10 +144,16 @@ namespace AiPhone
         public int Rejected { get; set; }
     }
 
-    internal sealed class SessionRequest
+    internal sealed class SessionRequest : PhoneSaveContext
     {
         [JsonProperty("day")]
         public int Day { get; set; }
+
+        [JsonProperty("reason")]
+        public string Reason { get; set; }
+
+        [JsonProperty("openingMessage", NullValueHandling = NullValueHandling.Ignore)]
+        public string OpeningMessage { get; set; }
     }
 
     internal sealed class PhoneConfig

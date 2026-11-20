@@ -55,7 +55,7 @@
     <ParcelTextures Include="Textures\Items\*.png" />
   </ItemGroup>
 
-  <Target Name="InstallMod" AfterTargets="Build">
+  <Target Name="InstallMod" AfterTargets="Build" Condition="'$(SkipModInstall)' != 'true'">
     <PropertyGroup>
       <ModInstallDir>$(ProbablyStolenDir)\Mods\AiPhone</ModInstallDir>
     </PropertyGroup>
@@ -65,6 +65,9 @@
     <Copy SourceFiles="config.example.json"
           DestinationFiles="$(ModInstallDir)\config.json"
           Condition="!Exists('$(ModInstallDir)\config.json')" />
+    <Copy SourceFiles="events.starter.txt"
+          DestinationFiles="$(ModInstallDir)\events.txt"
+          Condition="!Exists('$(ModInstallDir)\events.txt')" />
     <MakeDir Directories="$(ModInstallDir)\Textures\Items"
              Condition="'@(ParcelTextures)' != ''" />
     <Copy SourceFiles="@(ParcelTextures)"
